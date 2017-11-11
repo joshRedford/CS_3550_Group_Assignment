@@ -1,3 +1,3 @@
 # CS_3550_Group_Assignment
 
-This is my personal fork
+See the shared Google Drive folder for things to do and assignments (might move those to Github).
