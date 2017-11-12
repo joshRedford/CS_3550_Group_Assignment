@@ -200,6 +200,7 @@ ALTER TABLE EmployeeComputers
 	FOREIGN KEY (ComputerKey)
 	REFERENCES Computers (ComputerKey)
 
+GO
  
 /*
 
@@ -303,9 +304,66 @@ Last part, and to force you to do some testing...  Create the following executio
 /*
 	Stored Procedures under here
 */
+CREATE PROCEDURE AddEmployee
+	@LastName varchar(25),
+	@FirstName varchar(25),
+	@Email varchar(50),
+	@Hired date,
+	@DepartmentKey int,
+	@SupervisorEmployeeKey int,
+	@isOwnSupervisor bit = 0
+AS
 
+IF @isOwnSupervisor = 1 
+  BEGIN
+	IF EXISTS (SELECT 1 FROM Employees)
+		SET @SupervisorEmployeeKey = 1;
+	ELSE
+		SET @SupervisorEmployeeKey = IDENT_CURRENT('Employees') + IDENT_INCR('Employees');
+  END;
 
+INSERT INTO Employees (LastName, FirstName, Email, Hired, DepartmentKey)
+VALUES (@LastName, @FirstName, @Email, @Hired, @DepartmentKey, @SupervisorEmployeeKey);
 
+GO
+
+CREATE PROCEDURE EditEmployeeDepartment
+	@EmployeeKey int,
+	@DepartmentKey int,
+	@SupervisorEmployeeKey int,
+	@isOwnSupervisor bit = 0	
+AS
+
+IF @isOwnSupervisor = 1 
+  BEGIN
+	IF EXISTS (SELECT 1 FROM Employees)
+		SET @SupervisorEmployeeKey = 1;
+	ELSE
+		SET @SupervisorEmployeeKey = IDENT_CURRENT('Employees') + IDENT_INCR('Employees');
+  END
+
+UPDATE Employees
+
+	SET DepartmentKey = @DepartmentKey, 
+	SupervisorEmployeeKey = @SupervisorEmployeeKey
+
+	WHERE EmployeeKey = @EmployeeKey;
+GO
+
+CREATE PROCEDURE TerminateEmployee
+	@EmployeeKey int,	
+	@Terminated date
+AS
+
+IF EXISTS (SELECT 1 FROM EmployeeComputers WHERE EmployeeKey = @EmployeeKey)
+	THROW 1, 'You should not terminate and employee before they return their devices.', 1;
+
+UPDATE Employees
+
+	SET Terminated = @Terminated
+
+	WHERE EmployeeKey = @EmployeeKey;
+GO
 
 --------------------------------
 /*
@@ -318,18 +376,59 @@ Last part, and to force you to do some testing...  Create the following executio
 /*
 	Views under here
 */
+CREATE VIEW AvailableComputers
+AS
 
+WITH MostRecentHistory AS
+(
+	SELECT TOP 1 
+		stat.ActiveStatus isActive,
+		hist.ComputerKey ComputerKey,
+		hist.EmployeeKey LastOwner,
+		ROW_NUMBER() OVER (PARTITION BY ComputerKey ORDER BY HistoryDate DESC) Recent
+	 
+	FROM ComputerStatusHistory hist
+		INNER JOIN ComputerStatuses stat ON stat.ComputerStatusKey = hist.ChangedComputerStatusKey
+)
+SELECT comps.*,
+	LastOwner
 
+FROM Computers comps
+	INNER JOIN MostRecentHistory hist ON hist.ComputerKey = comps.ComputerKey
+		AND hist.isActive = 1
+		AND hist.Recent = 1
 
+GO
 
 --------------------------------
 /*
 	Functions under here
 */
+CREATE FUNCTION ChangeUnit (
+	@inUnit varchar(2),
+	@inValue int,
+	@outUnit varchar(2)
+)
+RETURNS int
+AS
+  BEGIN
 
+	DECLARE @returnValue int;
 
+	IF @inUnit = 'MB'
+		SET @returnValue = @inValue / 1024
+	ELSE IF @inUnit = 'TB'
+		SET @returnValue = @inValue * 1024
+	
+	IF @outUnit = 'MB'
+		SET @returnValue = @returnValue * 1024
+	ELSE IF @outUnit = 'TB'
+		SET @returnValue = @returnValue / 1024
 
+	RETURN @returnValue;
 
+  END
+GO
 
 --------------------------------
 /*
