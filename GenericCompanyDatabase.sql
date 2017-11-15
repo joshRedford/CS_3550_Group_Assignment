@@ -431,6 +431,43 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE ChangeComputerStatus
+	@ComputerKey INT,
+	@EmployeeKey INT,
+	@NewStatus INT
+AS
+
+IF NOT EXISTS(SELECT 1 FROM Computers WHERE ComputerKey = @ComputerKey) 
+	BEGIN
+		PRINT('Computer does not exist')
+	END
+ELSE IF (@NewStatus NOT IN (SELECT ComputerStatusKey FROM ComputerStatuses))
+	BEGIN
+		PRINT('Not a valid status')
+	END
+ELSE IF (@EmployeeKey NOT IN (SELECT EmployeeKey FROM Employees))
+	BEGIN
+		PRINT('Employee does not exist')
+	END
+ELSE
+	BEGIN
+		PRINT('Computer exists, status is valid and employee exists. Updating history table...')
+		DECLARE @OldStatus INT = 
+			(
+				SELECT TOP 1
+					CSH.ChangedComputerStatusKey
+				FROM
+					ComputerStatusHistory CSH
+				WHERE 
+					CSH.ComputerKey = @ComputerKey --passed in computer key
+				ORDER BY 
+					CSH.HistoryDate DESC --latest date for computer
+			)
+		INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+			VALUES (@ComputerKey, @EmployeeKey, @OldStatus, @NewStatus, GETDATE());
+	END
+GO
+
 --------------------------------
 /*
 	Triggers under here
