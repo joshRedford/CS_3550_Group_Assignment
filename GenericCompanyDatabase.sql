@@ -245,7 +245,9 @@ Create a stored procedure that shows the complete history for a machine.  The st
 	procedure should accept a computer key and return all the details of the machine (as above) and
 	the date/time it moved into each status.  Include any associated users name and email address
 	(name in lastname, firstname format).  If the computer can't be found, have the stored
-	procedure return -1 as an output variable (1 if it worked).
+	procedure return -1 as an output variable (1 if it worked). 
+	Include the info about the computer itself (what is it, specs. These will be repeated), name of user 
+	assigned to, when it happened and what happened. An audit trail. May not have a user (so use left join).
 
 All data for hard drive space and memory will be given to you in MB (let's say it is a crappy purchasing
 	system that hasn't been updated in a while).  Create a function that will accept a number (representing
