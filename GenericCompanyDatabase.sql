@@ -318,7 +318,7 @@ AS
 
 IF @isOwnSupervisor = 1 
   BEGIN
-	IF EXISTS (SELECT 1 FROM Employees)
+	IF EXISTS (SELECT 1 FROM Employees WHERE isnull(Terminated, 1) != 1)
 		SET @SupervisorEmployeeKey = 1;
 	ELSE
 		SET @SupervisorEmployeeKey = IDENT_CURRENT('Employees') + IDENT_INCR('Employees');
