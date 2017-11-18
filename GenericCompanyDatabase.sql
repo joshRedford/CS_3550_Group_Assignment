@@ -470,6 +470,52 @@ ELSE
 	END
 GO
 
+--Brands table: create and remove
+CREATE PROCEDURE spCreateBrand
+	@Brand VARCHAR(40),
+	@Active BIT 
+AS
+IF @Brand = (SELECT Brand FROM Brands WHERE Brand = @Brand)
+	BEGIN	
+		PRINT 'Brand already exists'
+	END
+	ELSE
+	BEGIN	
+		INSERT INTO Brands (Brand, Active)
+		VALUES (@Brand, @Active)
+	END
+
+CREATE PROCEDURE spRemoveBrandKey
+	@BrandKey INT
+AS
+BEGIN
+	DELETE FROM Brands
+	WHERE BrandKey = @BrandKey
+END
+
+--Departments table: create and remove
+
+CREATE PROCEDURE spCreateDepartment
+	@Department VARCHAR(255)
+AS
+IF @Department = (SELECT Department FROM Departments WHERE Department = @Department)
+	BEGIN
+		PRINT 'Department already exists'
+	END
+	ELSE
+	BEGIN
+		INSERT INTO Departments (Department)
+		VALUES (@Department)
+	END
+
+CREATE PROCEDURE spRemoveDepartmentKey
+	@DepartmentKey INT
+AS
+BEGIN
+	DELETE FROM Departments
+	WHERE DepartmentKey = @DepartmentKey
+END
+
 --------------------------------
 /*
 	Triggers under here
