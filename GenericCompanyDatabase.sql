@@ -606,7 +606,83 @@ GO
 	Triggers under here
 */
 --------------------------------
+-----After Inserts
+CREATE TRIGGER tr_ComputersAfterInsert
+ON Computers
+AFTER INSERT
+AS
+BEGIN
+	DECLARE @CompKey INT
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
 
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, NULL, NULL, 0, GETDATE())	
+END
+
+CREATE TRIGGER tr_EmpComputersAfterInsert
+ON EmployeeComputers
+AFTER INSERT
+AS
+BEGIN
+	DECLARE @CompKey INT
+	DECLARE @EmployeeKey INT
+	DECLARE @OrigStatsKey INT
+	DECLARE @HistDate DATE
+
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @EmployeeKey = (SELECT EmployeeKey from inserted)	
+	SET @HistDate = (SELECT Assigned FROM inserted)
+
+	UPDATE Computers
+	SET ComputerStatusKey = 1
+	WHERE ComputerKey = @CompKey
+
+	SET @OrigStatsKey = (SELECT ChangedComputerStatusKey FROM ComputerStatusHistory WHERE ComputerKey = @CompKey)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmployeeKey, @OrigStatsKey, 1, @HistDate)	
+END
+
+-----After Updates
+CREATE TRIGGER tr_ComputersAfterUpdate
+ON Computers
+AFTER UPDATE
+AS
+BEGIN
+	DECLARE @CompKey INT	
+	DECLARE @EmpKey INT
+	DECLARE @OrigCompStatKey INT
+	DECLARE @ChgCompStatKey INT
+	
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @EmpKey = (SELECT EmployeeKey FROM EmployeeComputers WHERE ComputerKey = @CompKey)
+	SET @OrigCompStatKey = (SELECT ComputerStatusKey FROM deleted)
+	SET @ChgCompStatKey = (SELECT ComputerStatusKey FROM inserted)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmpKey, @OrigCompStatKey, @ChgCompStatKey, GETDATE())		
+END
+
+CREATE TRIGGER tr_EmpComputersAfterUpdate
+ON EmployeeComputers
+AFTER UPDATE
+AS
+BEGIN
+	DECLARE @EmpKey INT
+	DECLARE @CompKey INT	
+	DECLARE @OrigStatsKey INT
+	
+	SET @EmpKey = (SELECT EmployeeKey FROM inserted)
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @OrigStatsKey = (SELECT TOP 1 ChangedComputerStatusKey FROM ComputerStatusHistory 
+		WHERE ComputerKey = @CompKey ORDER BY HistoryDate DESC)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmpKey, @OrigStatsKey, 1, GETDATE())		
+END
 
 
 --------------------------------
@@ -636,6 +712,44 @@ FROM Computers comps
 		AND hist.isActive = 1
 		AND hist.Recent = 1
 GO
+
+CREATE VIEW vw_ComputersInForRepair
+AS
+SELECT DISTINCT
+	E.LastName,
+	E.FirstName,
+	E.Email,
+	DATEDIFF(HH, X.HistDate, GETDATE()) [TimeInRepair_Hours], 
+	C.MemoryCapacityInMB,
+	C.HardDriveCapacityinGB,
+	C.VideoCardDescription,
+	CPUT.CPUType,
+	B.Brand,
+	CT.ComputerType
+FROM 
+	Employees E
+	INNER JOIN ComputerStatusHistory CSH 
+		ON E.EmployeeKey = CSH.EmployeeKey
+	INNER JOIN Computers C
+		ON C.ComputerKey = CSH.ComputerKey
+	INNER JOIN Brands B
+		ON C.BrandKey = B.BrandKey
+	INNER JOIN CPUTypes CPUT
+		ON C.CPUTypeKey = CPUT.CPUTypeKey
+	INNER JOIN ComputerTypes CT
+		ON CT.ComputerTypeKey = C.ComputerTypeKey
+	INNER JOIN 
+		(SELECT 
+			MAX(HistoryDate) [HistDate],
+			ComputerKey
+		FROM 
+			ComputerStatusHistory
+		WHERE 
+			ChangedComputerStatusKey = 4
+		GROUP BY  
+			ComputerKey) X
+		ON X.ComputerKey = CSH.ComputerKey		
+WHERE C.ComputerStatusKey = 4
 
 CREATE OR ALTER VIEW LostOrStolenComputers
 -- View of all stolen/lost computers
@@ -724,7 +838,7 @@ GO
 --------------------------------
 
 -- Create the department 'Business Intelligence'
-
+sp_CreateDepartment 'Business Intelligence'
 
 -- Add two valid employee, both part of Business Intelligence
 
