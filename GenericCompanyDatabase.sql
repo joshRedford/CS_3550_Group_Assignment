@@ -306,7 +306,10 @@ Last part, and to force you to do some testing...  Create the following executio
 /*
 	Stored Procedures under here
 */
-CREATE PROCEDURE AddEmployee
+--------------------------------
+
+--Add a new employee
+CREATE OR ALTER PROCEDURE sp_AddEmployee
 	@LastName varchar(25),
 	@FirstName varchar(25),
 	@Email varchar(50),
@@ -318,18 +321,19 @@ AS
 
 IF @isOwnSupervisor = 1 
   BEGIN
-	IF EXISTS (SELECT 1 FROM Employees WHERE isnull(Terminated, 1) != 1)
+	IF EXISTS (SELECT 1 FROM Employees WHERE ISNULL(CONVERT(varchar(10),Terminated, 121), 1) != 1)
 		SET @SupervisorEmployeeKey = 1;
 	ELSE
 		SET @SupervisorEmployeeKey = IDENT_CURRENT('Employees') + IDENT_INCR('Employees');
   END;
 
-INSERT INTO Employees (LastName, FirstName, Email, Hired, DepartmentKey)
+INSERT INTO Employees (LastName, FirstName, Email, Hired, DepartmentKey, SupervisorEmployeeKey)
 VALUES (@LastName, @FirstName, @Email, @Hired, @DepartmentKey, @SupervisorEmployeeKey);
 
 GO
 
-CREATE PROCEDURE EditEmployeeDepartment
+--Edit an employee's department
+CREATE PROCEDURE sp_EditEmployeeDepartment
 	@EmployeeKey int,
 	@DepartmentKey int,
 	@SupervisorEmployeeKey int,
@@ -352,7 +356,8 @@ UPDATE Employees
 	WHERE EmployeeKey = @EmployeeKey;
 GO
 
-CREATE PROCEDURE TerminateEmployee
+--Terminate an employee
+CREATE PROCEDURE sp_TerminateEmployee
 	@EmployeeKey int,	
 	@Terminated date
 AS
@@ -367,7 +372,8 @@ UPDATE Employees
 	WHERE EmployeeKey = @EmployeeKey;
 GO
 
-CREATE OR ALTER PROCEDURE GetComputerInfo
+--Get information of a computer
+CREATE OR ALTER PROCEDURE sp_GetComputerInfo
 	@ComputerKey INT
 AS
 BEGIN
@@ -433,7 +439,8 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER PROCEDURE ChangeComputerStatus
+-- Change computer status
+CREATE OR ALTER PROCEDURE sp_ChangeComputerStatus
 	@ComputerKey INT,
 	@EmployeeKey INT,
 	@NewStatus INT
@@ -456,22 +463,27 @@ ELSE
 		PRINT('Computer exists, status is valid and employee exists. Updating history table...')
 		DECLARE @OldStatus INT = 
 			(
-				SELECT TOP 1
-					CSH.ChangedComputerStatusKey
-				FROM
-					ComputerStatusHistory CSH
-				WHERE 
-					CSH.ComputerKey = @ComputerKey --passed in computer key
-				ORDER BY 
-					CSH.HistoryDate DESC --latest date for computer
+				SELECT
+					ComputerStatusKey
+				FROM 
+					Computers
+				WHERE
+					ComputerKey = @ComputerKey
 			)
+
+		-- Add a record to status history table
 		INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
-			VALUES (@ComputerKey, @EmployeeKey, @OldStatus, @NewStatus, GETDATE());
+			VALUES (@ComputerKey, @EmployeeKey, @OldStatus, @NewStatus, GETDATE())
+		
+		-- Update the computer status in Computer table
+		UPDATE Computers
+		SET ComputerStatusKey = @NewStatus
+		WHERE ComputerKey = @ComputerKey
 	END
 GO
 
 --Brands table: create and remove
-CREATE PROCEDURE spCreateBrand
+CREATE PROCEDURE sp_CreateBrand
 	@Brand VARCHAR(40),
 	@Active BIT 
 AS
@@ -484,6 +496,7 @@ IF @Brand = (SELECT Brand FROM Brands WHERE Brand = @Brand)
 		INSERT INTO Brands (Brand, Active)
 		VALUES (@Brand, @Active)
 	END
+GO
 
 CREATE PROCEDURE spRemoveBrandKey
 	@BrandKey INT
@@ -492,10 +505,10 @@ BEGIN
 	DELETE FROM Brands
 	WHERE BrandKey = @BrandKey
 END
+GO
 
 --Departments table: create and remove
-
-CREATE PROCEDURE spCreateDepartment
+CREATE PROCEDURE sp_CreateDepartment
 	@Department VARCHAR(255)
 AS
 IF @Department = (SELECT Department FROM Departments WHERE Department = @Department)
@@ -507,19 +520,108 @@ IF @Department = (SELECT Department FROM Departments WHERE Department = @Departm
 		INSERT INTO Departments (Department)
 		VALUES (@Department)
 	END
+GO
 
-CREATE PROCEDURE spRemoveDepartmentKey
+CREATE PROCEDURE sp_RemoveDepartmentKey
 	@DepartmentKey INT
 AS
 BEGIN
 	DELETE FROM Departments
 	WHERE DepartmentKey = @DepartmentKey
 END
+GO
+
+-- Assign a computer
+CREATE OR ALTER PROCEDURE sp_AssignComputer
+	@ComputerKey INT,
+	@EmployeeKey INT	
+AS
+BEGIN
+	DECLARE @Valid BIT = 1
+	-- Check if employee exists
+	IF @EmployeeKey NOT IN (SELECT EmployeeKey FROM Employees WHERE EmployeeKey = @EmployeeKey)
+		BEGIN
+			PRINT('Employee does not exist')
+			SET @Valid = 0
+		END
+	-- Check if computer exists
+	IF @ComputerKey NOT IN (SELECT ComputerKey FROM Computers WHERE ComputerKey = @ComputerKey)
+		BEGIN
+			PRINT('Computer does not exist')
+			SET @Valid = 0
+		END
+
+	IF @Valid = 1
+		BEGIN
+			-- Message if computer is assigned to someone else
+			IF @ComputerKey IN (SELECT TOP 1 ComputerKey FROM EmployeeComputers WHERE ComputerKey = 1 AND Assigned IS NOT NULL ORDER BY Assigned DESC)
+				BEGIN
+					PRINT('Computer is assigned to someone else. Reassigning...')
+				END
+
+			--Add a row to EmployeeComputers
+			INSERT INTO EmployeeComputers (EmployeeKey, ComputerKey, Assigned)
+				VALUES (@EmployeeKey, @ComputerKey, GETDATE())
+
+			--Update computer table with new status
+			UPDATE Computers
+			SET ComputerStatusKey = 1 --status of Assigned
+			WHERE ComputerKey = @ComputerKey
+
+			--Call ChangeComputerStatus SP to update the status history table
+			EXECUTE ChangeComputerStatus @ComputerKey, @EmployeeKey, 1
+		END
+	ELSE
+		BEGIN
+			PRINT('Cannot complete the action at this time. Check message log')
+		END
+END
+GO
+
+
+-- Create a new computer
+CREATE OR ALTER PROCEDURE sp_CreateNewComputer
+	@ComputerTypeKey INT,
+	@BrandKey INT,
+	@PurchaseDate DATETIME,
+	@PurchaseCost MONEY,
+	@MemoryCapacityInMB INT,
+	@HardDriveCapacityInGB INT,
+	@VideoCardDescription VARCHAR(255),
+	@CPUTypeKey INT,
+	@CPUClockRateInGHZ DECIMAL(6,4)
+AS
+BEGIN
+	DECLARE @Valid BIT = 1
+	--Do a bunch of checks
+	IF
+		NOT EXISTS (SELECT ComputerTypeKey FROM ComputerTypes WHERE ComputerTypeKey = @ComputerTypeKey) OR
+		NOT EXISTS (SELECT BrandKey FROM Brands WHERE BrandKey = @BrandKey) OR
+		NOT EXISTS (SELECT CPUTypeKey FROM CPUTypes WHERE CPUTypeKey = @CPUTypeKey)
+		BEGIN
+			SET @Valid = 0
+			PRINT('Something doesn''t exist. Plese check your entry.')
+		END
+	IF @Valid = 1
+		BEGIN
+			--Finally, add the computer to the table
+			INSERT INTO Computers (ComputerTypeKey, BrandKey, ComputerStatusKey, PurchaseDate, PurchaseCost, MemoryCapacityInMB, HardDriveCapacityinGB, VideoCardDescription, CPUTypeKey, CPUClockRateInGHZ)
+				VALUES (@ComputerTypeKey, @BrandKey, 0, @PurchaseDate, @PurchaseCost, @MemoryCapacityInMB, @HardDriveCapacityInGB, @VideoCardDescription, @CPUTypeKey, @CPUClockRateInGHZ)
+			DECLARE @NewCompID INT = @@IDENTITY
+
+			--Add to computer status history table
+			EXECUTE ChangeComputerStatus @NewCompID, NULL, 0
+		END
+
+END
+GO
+
 
 --------------------------------
 /*
 	Triggers under here
 */
+--------------------------------
 
 
 
@@ -527,6 +629,7 @@ END
 /*
 	Views under here
 */
+--------------------------------
 CREATE VIEW AvailableComputers
 AS
 
@@ -605,6 +708,7 @@ GO
 /*
 	Functions under here
 */
+--------------------------------
 CREATE FUNCTION ChangeUnit (
 	@inUnit varchar(2),
 	@inValue int,
