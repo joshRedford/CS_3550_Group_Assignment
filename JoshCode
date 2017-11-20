@@ -1,0 +1,174 @@
+-------STORED PROCEDURES
+-----Brands table: create and remove
+CREATE PROCEDURE sp_CreateBrand
+	@Brand VARCHAR(40),
+	@Active BIT 
+AS
+IF @Brand = (SELECT Brand FROM Brands WHERE Brand = @Brand)
+	BEGIN	
+		PRINT 'Brand already exists'
+	END
+ELSE
+	BEGIN	
+		INSERT INTO Brands (Brand, Active)
+		VALUES (@Brand, @Active)
+	END
+
+CREATE PROCEDURE sp_RemoveBrandKey
+	@BrandKey INT
+AS
+BEGIN
+	DELETE FROM Brands
+	WHERE BrandKey = @BrandKey
+END
+
+-----Departments table: create and remove
+
+CREATE PROCEDURE sp_CreateDepartment
+	@Department VARCHAR(255)
+AS
+IF @Department = (SELECT Department FROM Departments WHERE Department = @Department)
+	BEGIN
+		PRINT 'Department already exists'
+	END
+ELSE
+	BEGIN
+		INSERT INTO Departments (Department)
+		VALUES (@Department)
+	END
+
+CREATE PROCEDURE sp_RemoveDepartmentKey
+	@DepartmentKey INT
+AS
+BEGIN
+	DELETE FROM Departments
+	WHERE DepartmentKey = @DepartmentKey
+END
+
+
+
+-------TRIGGERS---------------------------------------------------------------------
+CREATE TRIGGER tr_ComputersAfterInsert
+ON Computers
+AFTER INSERT
+--AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+	DECLARE @CompKey INT
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, NULL, NULL, 0, GETDATE())	
+END
+
+CREATE TRIGGER tr_EmpComputersAfterInsert
+ON EmployeeComputers
+AFTER INSERT
+AS
+BEGIN
+	DECLARE @CompKey INT
+	DECLARE @EmployeeKey INT
+	DECLARE @OrigStatsKey INT
+	DECLARE @HistDate DATE
+
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @EmployeeKey = (SELECT EmployeeKey from inserted)	
+	SET @HistDate = (SELECT Assigned FROM inserted)
+
+	UPDATE Computers
+	SET ComputerStatusKey = 1
+	WHERE ComputerKey = @CompKey
+
+	SET @OrigStatsKey = (SELECT ChangedComputerStatusKey FROM ComputerStatusHistory WHERE ComputerKey = @CompKey)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmployeeKey, @OrigStatsKey, 1, @HistDate)	
+END
+
+
+
+CREATE TRIGGER tr_ComputersAfterUpdate
+ON Computers
+AFTER UPDATE
+AS
+BEGIN
+	DECLARE @CompKey INT	
+	DECLARE @EmpKey INT
+	DECLARE @OrigCompStatKey INT
+	DECLARE @ChgCompStatKey INT
+	
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @EmpKey = (SELECT EmployeeKey FROM EmployeeComputers WHERE ComputerKey = @CompKey)
+	SET @OrigCompStatKey = (SELECT ComputerStatusKey FROM deleted)
+	SET @ChgCompStatKey = (SELECT ComputerStatusKey FROM inserted)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmpKey, @OrigCompStatKey, @ChgCompStatKey, GETDATE())		
+END
+
+CREATE TRIGGER tr_EmpComputersAfterUpdate
+ON EmployeeComputers
+AFTER UPDATE
+AS
+BEGIN
+	DECLARE @EmpKey INT
+	DECLARE @CompKey INT	
+	DECLARE @OrigStatsKey INT
+	--DECLARE @HistDate DATE
+	
+	SET @EmpKey = (SELECT EmployeeKey FROM inserted)
+	SET @CompKey = (SELECT ComputerKey FROM inserted)
+	SET @OrigStatsKey = (SELECT TOP 1 ChangedComputerStatusKey FROM ComputerStatusHistory 
+		WHERE ComputerKey = @CompKey ORDER BY HistoryDate DESC)
+	--SET @HistDate = (SELECT Assigned FROM inserted)
+
+	INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, 
+		OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
+	VALUES (@CompKey, @EmpKey, @OrigStatsKey, 1, GETDATE())		
+END
+
+
+-------VIEW-----------------------------------------------------------------------------------
+CREATE VIEW vw_ComputersInForRepair
+AS
+SELECT DISTINCT
+	E.LastName,
+	E.FirstName,
+	E.Email,
+	DATEDIFF(HH, X.HistDate, GETDATE()) [TimeInRepair_Hours], 
+	C.MemoryCapacityInMB,
+	C.HardDriveCapacityinGB,
+	C.VideoCardDescription,
+	CPUT.CPUType,
+	B.Brand,
+	CT.ComputerType
+FROM 
+	Employees E
+	INNER JOIN ComputerStatusHistory CSH 
+		ON E.EmployeeKey = CSH.EmployeeKey
+	INNER JOIN Computers C
+		ON C.ComputerKey = CSH.ComputerKey
+	INNER JOIN Brands B
+		ON C.BrandKey = B.BrandKey
+	INNER JOIN CPUTypes CPUT
+		ON C.CPUTypeKey = CPUT.CPUTypeKey
+	INNER JOIN ComputerTypes CT
+		ON CT.ComputerTypeKey = C.ComputerTypeKey
+	INNER JOIN 
+		(SELECT 
+			MAX(HistoryDate) [HistDate],
+			ComputerKey
+		FROM 
+			ComputerStatusHistory
+		WHERE 
+			ChangedComputerStatusKey = 4
+		GROUP BY  
+			ComputerKey) X
+		ON X.ComputerKey = CSH.ComputerKey		
+WHERE C.ComputerStatusKey = 4
+
+------------TEST----------------------------------------------------------------------------
+--Create the department "Business intelligence'
+sp_CreateDepartment 'Business Intelligence'
