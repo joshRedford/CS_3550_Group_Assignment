@@ -373,6 +373,7 @@ UPDATE Employees
 GO
 
 --Get information of a computer
+--I don't think this was in the requirements but I'm leaving it anyways.
 CREATE OR ALTER PROCEDURE sp_GetComputerInfo
 	@ComputerKey INT
 AS
@@ -442,44 +443,25 @@ GO
 -- Change computer status
 CREATE OR ALTER PROCEDURE sp_ChangeComputerStatus
 	@ComputerKey INT,
-	@EmployeeKey INT,
 	@NewStatus INT
 AS
-
-IF NOT EXISTS(SELECT 1 FROM Computers WHERE ComputerKey = @ComputerKey) 
-	BEGIN
-		PRINT('Computer does not exist')
-	END
-ELSE IF (@NewStatus NOT IN (SELECT ComputerStatusKey FROM ComputerStatuses))
-	BEGIN
-		PRINT('Not a valid status')
-	END
-ELSE IF (@EmployeeKey NOT IN (SELECT EmployeeKey FROM Employees))
-	BEGIN
-		PRINT('Employee does not exist')
-	END
-ELSE
-	BEGIN
-		PRINT('Computer exists, status is valid and employee exists. Updating history table...')
-		DECLARE @OldStatus INT = 
-			(
-				SELECT
-					ComputerStatusKey
-				FROM 
-					Computers
-				WHERE
-					ComputerKey = @ComputerKey
-			)
-
-		-- Add a record to status history table
-		INSERT INTO ComputerStatusHistory (ComputerKey, EmployeeKey, OriginalComputerStatusKey, ChangedComputerStatusKey, HistoryDate)
-			VALUES (@ComputerKey, @EmployeeKey, @OldStatus, @NewStatus, GETDATE())
-		
-		-- Update the computer status in Computer table
-		UPDATE Computers
-		SET ComputerStatusKey = @NewStatus
-		WHERE ComputerKey = @ComputerKey
-	END
+	IF NOT EXISTS(SELECT 1 FROM Computers WHERE ComputerKey = @ComputerKey) 
+		BEGIN
+			PRINT('Computer does not exist')
+		END
+	ELSE IF NOT EXISTS(SELECT 1 FROM ComputerStatuses WHERE ComputerStatusKey = @NewStatus)
+		BEGIN
+			PRINT('Not a valid status')
+		END
+	ELSE
+		BEGIN
+			PRINT('Computer exists and status is valid. Updating computers table...')
+			
+			-- Update the computer status in Computer table
+			UPDATE Computers
+			SET ComputerStatusKey = @NewStatus
+			WHERE ComputerKey = @ComputerKey
+		END
 GO
 
 --Brands table: create and remove
@@ -498,7 +480,7 @@ IF @Brand = (SELECT Brand FROM Brands WHERE Brand = @Brand)
 	END
 GO
 
-CREATE PROCEDURE spRemoveBrandKey
+CREATE PROCEDURE sp_RemoveBrandKey
 	@BrandKey INT
 AS
 BEGIN
@@ -568,8 +550,8 @@ BEGIN
 			SET ComputerStatusKey = 1 --status of Assigned
 			WHERE ComputerKey = @ComputerKey
 
-			--Call ChangeComputerStatus SP to update the status history table
-			EXECUTE ChangeComputerStatus @ComputerKey, @EmployeeKey, 1
+			--Call ChangeComputerStatus SP to update the status history table (handled by trigger)
+			--EXECUTE sp_ChangeComputerStatus @ComputerKey, 1
 		END
 	ELSE
 		BEGIN
@@ -607,10 +589,10 @@ BEGIN
 			--Finally, add the computer to the table
 			INSERT INTO Computers (ComputerTypeKey, BrandKey, ComputerStatusKey, PurchaseDate, PurchaseCost, MemoryCapacityInMB, HardDriveCapacityinGB, VideoCardDescription, CPUTypeKey, CPUClockRateInGHZ)
 				VALUES (@ComputerTypeKey, @BrandKey, 0, @PurchaseDate, @PurchaseCost, @MemoryCapacityInMB, @HardDriveCapacityInGB, @VideoCardDescription, @CPUTypeKey, @CPUClockRateInGHZ)
-			DECLARE @NewCompID INT = @@IDENTITY
 
-			--Add to computer status history table
-			EXECUTE ChangeComputerStatus @NewCompID, NULL, 0
+			--Add to computer status history table (handled by trigger)
+			--DECLARE @NewCompID INT = @@IDENTITY
+			--EXECUTE sp_ChangeComputerStatus @NewCompID, 0
 		END
 
 END
