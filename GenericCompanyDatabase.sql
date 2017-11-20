@@ -513,6 +513,45 @@ BEGIN
 END
 GO
 
+-- Create a new computer
+CREATE OR ALTER PROCEDURE sp_CreateNewComputer
+	@ComputerTypeKey INT,
+	@BrandKey INT,
+	@PurchaseDate DATETIME,
+	@PurchaseCost MONEY,
+	@MemoryCapacityInMB INT,
+	@HardDriveCapacityInGB INT,
+	@VideoCardDescription VARCHAR(255),
+	@CPUTypeKey INT,
+	@CPUClockRateInGHZ DECIMAL(6,4),
+	@NewComputerKey INT = NULL OUTPUT
+AS
+BEGIN
+	DECLARE @Valid BIT = 1
+	--Do a bunch of checks
+	IF
+		NOT EXISTS (SELECT ComputerTypeKey FROM ComputerTypes WHERE ComputerTypeKey = @ComputerTypeKey) OR
+		NOT EXISTS (SELECT BrandKey FROM Brands WHERE BrandKey = @BrandKey) OR
+		NOT EXISTS (SELECT CPUTypeKey FROM CPUTypes WHERE CPUTypeKey = @CPUTypeKey)
+		BEGIN
+			SET @Valid = 0
+			PRINT('Something doesn''t exist. Plese check your entry.')
+		END
+	IF @Valid = 1
+		BEGIN
+			--Finally, add the computer to the table
+			INSERT INTO Computers (ComputerTypeKey, BrandKey, ComputerStatusKey, PurchaseDate, PurchaseCost, MemoryCapacityInMB, HardDriveCapacityinGB, VideoCardDescription, CPUTypeKey, CPUClockRateInGHZ)
+				VALUES (@ComputerTypeKey, @BrandKey, 0, @PurchaseDate, @PurchaseCost, @MemoryCapacityInMB, @HardDriveCapacityInGB, @VideoCardDescription, @CPUTypeKey, @CPUClockRateInGHZ)
+
+			SET @NewComputerKey = SCOPE_IDENTITY()
+			--Add to computer status history table (handled by trigger)
+			--DECLARE @NewCompID INT = @@IDENTITY
+			--EXECUTE sp_ChangeComputerStatus @NewCompID, 0
+		END
+
+END
+GO
+
 -- Assign a computer
 CREATE OR ALTER PROCEDURE sp_AssignComputer
 	@ComputerKey INT,
@@ -561,43 +600,6 @@ END
 GO
 
 
--- Create a new computer
-CREATE OR ALTER PROCEDURE sp_CreateNewComputer
-	@ComputerTypeKey INT,
-	@BrandKey INT,
-	@PurchaseDate DATETIME,
-	@PurchaseCost MONEY,
-	@MemoryCapacityInMB INT,
-	@HardDriveCapacityInGB INT,
-	@VideoCardDescription VARCHAR(255),
-	@CPUTypeKey INT,
-	@CPUClockRateInGHZ DECIMAL(6,4)
-AS
-BEGIN
-	DECLARE @Valid BIT = 1
-	--Do a bunch of checks
-	IF
-		NOT EXISTS (SELECT ComputerTypeKey FROM ComputerTypes WHERE ComputerTypeKey = @ComputerTypeKey) OR
-		NOT EXISTS (SELECT BrandKey FROM Brands WHERE BrandKey = @BrandKey) OR
-		NOT EXISTS (SELECT CPUTypeKey FROM CPUTypes WHERE CPUTypeKey = @CPUTypeKey)
-		BEGIN
-			SET @Valid = 0
-			PRINT('Something doesn''t exist. Plese check your entry.')
-		END
-	IF @Valid = 1
-		BEGIN
-			--Finally, add the computer to the table
-			INSERT INTO Computers (ComputerTypeKey, BrandKey, ComputerStatusKey, PurchaseDate, PurchaseCost, MemoryCapacityInMB, HardDriveCapacityinGB, VideoCardDescription, CPUTypeKey, CPUClockRateInGHZ)
-				VALUES (@ComputerTypeKey, @BrandKey, 0, @PurchaseDate, @PurchaseCost, @MemoryCapacityInMB, @HardDriveCapacityInGB, @VideoCardDescription, @CPUTypeKey, @CPUClockRateInGHZ)
-
-			--Add to computer status history table (handled by trigger)
-			--DECLARE @NewCompID INT = @@IDENTITY
-			--EXECUTE sp_ChangeComputerStatus @NewCompID, 0
-		END
-
-END
-GO
-
 
 --------------------------------
 /*
@@ -633,7 +635,6 @@ FROM Computers comps
 	INNER JOIN MostRecentHistory hist ON hist.ComputerKey = comps.ComputerKey
 		AND hist.isActive = 1
 		AND hist.Recent = 1
-
 GO
 
 CREATE OR ALTER VIEW LostOrStolenComputers
@@ -682,7 +683,6 @@ AS
 			ON Y.ComputerKey = C.ComputerKey
 		INNER JOIN Employees E
 			ON Y.EmployeeKey = E.EmployeeKey
-
 GO
 
 
@@ -721,4 +721,74 @@ GO
 /*
 	Tests under here
 */
+--------------------------------
 
+-- Create the department 'Business Intelligence'
+
+
+-- Add two valid employee, both part of Business Intelligence
+
+
+-- Try to add an employee, passing in a department that doesn't exist
+
+
+-- Try to add an employee, passing in a supervisor that is no longer active (what should this do?)
+
+
+-- Update an employees department to 'Human Resources'
+
+
+-- Try to update an employees department to 'Moon Staff' (assuming that 'Moon Staff' doesn't exist in your database).  
+
+
+-- Update an employees supervisor to an active employee
+
+
+-- Try updating an employees supervisor to an inactive employee.  Should this work?
+
+
+-- Create a new Mac Book pro laptop for Major Geek.  Use whatever specs you can find off the Apple web page.  Make sure the laptop gets assigned to Major Geek
+	DECLARE @NewComputerKey INT
+	EXECUTE sp_CreateNewComputer
+		@ComputerTypeKey = 2,
+		@BrandKey = 1,
+		@PurchaseDate = '11/18/2017',
+		@PurchaseCost = 2799.00,
+		@MemoryCapacityInMB = 16384,
+		@HardDriveCapacityInGB = 512,
+		@VideoCardDescription = 'AMD Radeon Pro 560',
+		@CPUTypeKey = 2,
+		@CPUClockRateInGHZ = 3.9, 
+		@NewComputerKey = @NewComputerKey OUTPUT
+	GO
+
+	EXECUTE sp_AssignComputer
+		@ComputerKey = @NewComputerKey,
+		@EmployeeKey = 3 -- Major Geek's key
+	GO
+
+-- Terminate employee #3 (Major Geek)
+
+
+-- Execute the stored procedure that shows the computer history, passing in the computer key for the new laptop you created for Major Geek (tricky).  Does it show available now?
+
+
+-- The CEO lost his laptop - execute the stored procedure to make this change.
+	EXECUTE sp_ChangeComputerStatus
+		@ComputerKey = 2, --The CEO's laptop
+		@NewStatus = 3
+	GO
+
+-- Select all records from your lost computer view.  Does the CEO's laptop show up?  How much was depreciated?
+
+
+-- Add two computers of your own choosing.
+
+
+-- Assign these computers to the CEO (he loses them fast)
+
+
+-- Return one of these computers
+
+
+-- and any others that you feel show off your awesomeness...
